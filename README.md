@@ -6,9 +6,8 @@
 ##Tech Stack
 ##Project Structure
 ## Development Progress
-
-- [ ] Backend Setup
 - [ ] Frontend Setup
+- [ ] Backend Setup
 - [ ] AI Agent
 - [ ] API Integration
 - [ ] Incident Report
