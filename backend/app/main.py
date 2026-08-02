@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.investigation import router as investigation_router
 
 app = FastAPI(
     title="AI SOC Incident Investigation Agent Backend",
@@ -32,3 +33,4 @@ def health_check():
         "service": "AI SOC Agent Backend",
         "version": "1.0.0"
     }
+app.include_router(investigation_router)
