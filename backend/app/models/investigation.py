@@ -9,4 +9,6 @@ class InvestigationRequest(BaseModel):
 class InvestigationResponse(BaseModel):
     ioc: str
     ioc_type: str
-    threat_intelligence: Optional[Dict[str, Any]] = None
+    risk_level: str
+    virustotal: Optional[Dict[str, Any]] = None
+    abuseipdb: Optional[Dict[str, Any]] = None

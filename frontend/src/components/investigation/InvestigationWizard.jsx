@@ -3,30 +3,25 @@ import {
   ShieldAlert, 
   Search, 
   Zap, 
-  Globe, 
-  Link, 
-  FileCode, 
   CheckCircle2, 
   Loader2, 
   Sparkles, 
-  Terminal,
-  Cpu,
-  ArrowRight
+  Cpu
 } from 'lucide-react';
 import { InvestigationResults } from './InvestigationResults';
+import { investigateIOC } from '../../services/api';
 
 export const InvestigationWizard = ({ onRunTriage }) => {
-  // Step 1 & 2 state
-  const [iocType, setIocType] = useState('IP Address');
   const [iocValue, setIocValue] = useState('198.51.100.44');
 
   // Execution flow states: 'idle' | 'simulating' | 'results'
   const [flowState, setFlowState] = useState('idle');
   const [currentSimStep, setCurrentSimStep] = useState(0);
   const [activeResult, setActiveResult] = useState(null);
+  const [error, setError] = useState(null);
 
   const simSteps = [
-    { title: 'Detecting IOC type', detail: `Validating format and syntax for ${iocType}...` },
+    { title: 'Detecting IOC type', detail: `Auto-detecting syntax and category for target IOC...` },
     { title: 'Querying VirusTotal', detail: `Requesting reputation, detection engines & malicious flags for ${iocValue}...` },
     { title: 'Querying AbuseIPDB', detail: 'Checking report frequency, CIDR block owner, and threat confidence rating...' },
     { title: 'Correlating threat intelligence', detail: 'Cross-referencing IOC against internal attack graph and MITRE ATT&CK heuristics...' },
@@ -35,16 +30,17 @@ export const InvestigationWizard = ({ onRunTriage }) => {
   ];
 
   const presets = [
-    { type: 'IP Address', value: '198.51.100.44', label: 'Sample C2 IP' },
-    { type: 'Domain', value: 'c2-exfil-node.ru', label: 'Rogue Exfil Domain' },
-    { type: 'URL', value: 'http://phishing-update.login-security.net/auth', label: 'Phishing URL' },
-    { type: 'File Hash', value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', label: 'Mimikatz Hash' }
+    { value: '198.51.100.44', label: 'Sample C2 IP' },
+    { value: 'google.com', label: 'Sample Domain' },
+    { value: 'c2-exfil-node.ru', label: 'Rogue Exfil Domain' },
+    { value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', label: 'Mimikatz Hash' }
   ];
 
-  const handleStartInvestigation = (e) => {
-    e.preventDefault();
+  const handleStartInvestigation = async (e) => {
+    if (e) e.preventDefault();
     if (!iocValue.trim()) return;
 
+    setError(null);
     setFlowState('simulating');
     setCurrentSimStep(0);
 
@@ -53,54 +49,52 @@ export const InvestigationWizard = ({ onRunTriage }) => {
       stepIndex++;
       if (stepIndex < simSteps.length) {
         setCurrentSimStep(stepIndex);
-      } else {
-        clearInterval(interval);
-        // Build simulated result object
-        const generatedResult = {
-          id: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-          iocType,
-          iocValue,
-          riskLevel: iocValue.includes('198') || iocValue.includes('e3b0') ? 'Critical' : 'High',
-          status: 'Completed',
-          date: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
-          threatIntel: {
-            virusTotal: '48/92 Security Vendors Flagged Malicious',
-            abuseIpdb: '94% Abuse Confidence Score (Reported 142 times)',
-            reputation: 'Known Command & Control (C2) / Threat Vector node'
-          },
-          aiReasoning: `High confidence detection for target ${iocType} "${iocValue}". Threat intelligence sources (VirusTotal & AbuseIPDB) confirm malicious correlation with active C2 infrastructure and unauthorized data staging.`,
-          recommendedActions: [
-            `Immediately isolate network connections associated with ${iocValue}`,
-            `Block ${iocType} (${iocValue}) on edge firewall and proxy filters`,
-            `Perform host memory and process tree audit on impacted endpoints`,
-            `Revoke active authentication tokens for affected user accounts`
-          ],
-          incidentReport: `# AI Incident Investigation Report
-**Target IOC:** ${iocValue} (${iocType})
-**Risk Level:** HIGH / CRITICAL
-**Scan Timestamp:** ${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC
-
-### Summary Findings
-High-confidence correlation of malicious IOC payload. Automated AI triage recommends immediate host isolation and firewall block rules.`
-        };
-
-        setActiveResult(generatedResult);
-        setFlowState('results');
-        if (onRunTriage) onRunTriage(generatedResult);
       }
-    }, 1200);
+    }, 500);
+
+    try {
+      const data = await investigateIOC(iocValue.trim());
+      clearInterval(interval);
+      setCurrentSimStep(simSteps.length - 1);
+
+      const generatedResult = {
+        id: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+        ioc: data.ioc || iocValue,
+        ioc_type: data.ioc_type || 'Unknown',
+        risk_level: data.risk_level || 'Low',
+        virustotal: data.virustotal,
+        abuseipdb: data.abuseipdb,
+        date: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
+      };
+
+      setActiveResult(generatedResult);
+      setFlowState('results');
+      if (onRunTriage) onRunTriage(generatedResult);
+    } catch (err) {
+      clearInterval(interval);
+      console.error('Investigation failed:', err);
+      const errorMessage = err.response?.data?.detail 
+        || err.message 
+        || 'Failed to communicate with the backend server. Please verify the FastAPI backend is running at http://127.0.0.1:8000.';
+      setError(errorMessage);
+      setFlowState('idle');
+    }
   };
 
   const handleSelectPreset = (p) => {
-    setIocType(p.type);
     setIocValue(p.value);
+    setError(null);
   };
 
   if (flowState === 'results') {
     return (
       <InvestigationResults
         resultData={activeResult}
-        onReset={() => setFlowState('idle')}
+        onReset={() => {
+          setFlowState('idle');
+          setError(null);
+          setActiveResult(null);
+        }}
       />
     );
   }
@@ -120,7 +114,7 @@ High-confidence correlation of malicious IOC payload. Automated AI triage recomm
               Investigate Indicator of Compromise (IOC)
             </h2>
             <p className="mt-1 text-xs text-cyber-muted max-w-2xl">
-              Select an IOC type (IP, Domain, URL, Hash) and enter a target value to launch automated VirusTotal & AbuseIPDB correlation and AI threat reasoning.
+              Enter any IOC target value (IP, Domain, URL, or File Hash). The system automatically detects the IOC type and launches VirusTotal correlation and AI threat reasoning.
             </p>
           </div>
 
@@ -140,76 +134,57 @@ High-confidence correlation of malicious IOC payload. Automated AI triage recomm
         </div>
       </div>
 
-      {/* Main 3-Step Wizard Form */}
+      {/* Error Banner */}
+      {error && (
+        <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-5 backdrop-blur-md shadow-2xl flex items-start gap-4 animate-fade-in">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/20 text-red-400">
+            <ShieldAlert className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-bold text-red-400 font-mono">Backend Request Failed</h4>
+            <p className="text-xs text-slate-300 leading-relaxed">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Wizard Form */}
       {flowState === 'idle' && (
         <form onSubmit={handleStartInvestigation} className="rounded-2xl border border-cyber-border bg-cyber-card/80 p-6 backdrop-blur-md space-y-6 shadow-2xl">
-          {/* Step 1: Select IOC Type */}
-          <div className="space-y-3">
-            <label className="text-xs font-bold text-cyber-text uppercase font-mono flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyber-accent text-cyber-bg text-[11px]">1</span>
-              Step 1: Select IOC Type
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { type: 'IP Address', icon: Globe, desc: 'IPv4 / IPv6 Address' },
-                { type: 'Domain', icon: Globe, desc: 'FQDN / Hostname' },
-                { type: 'URL', icon: Link, desc: 'Web URL / Endpoint' },
-                { type: 'File Hash', icon: FileCode, desc: 'MD5 / SHA-256 Hash' }
-              ].map((item) => {
-                const Icon = item.icon;
-                const isSelected = iocType === item.type;
-                return (
-                  <button
-                    key={item.type}
-                    type="button"
-                    onClick={() => setIocType(item.type)}
-                    className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all text-center ${
-                      isSelected
-                        ? 'border-cyber-accent bg-cyber-accent/15 text-cyber-accent shadow-[0_0_15px_rgba(6,182,212,0.2)] font-bold'
-                        : 'border-cyber-border bg-cyber-surface/60 text-cyber-muted hover:border-cyber-border/80 hover:text-cyber-text'
-                    }`}
-                  >
-                    <Icon className={`h-5 w-5 mb-2 ${isSelected ? 'text-cyber-accent' : 'text-cyber-muted'}`} />
-                    <span className="text-xs font-mono">{item.type}</span>
-                    <span className="text-[10px] text-cyber-muted mt-0.5">{item.desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Step 2: Enter IOC Value */}
+          {/* Enter IOC Value Input */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-cyber-text uppercase font-mono flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyber-accent text-cyber-bg text-[11px]">2</span>
-              Step 2: Enter {iocType} Target Value
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyber-accent text-cyber-bg text-[11px]">1</span>
+              Enter Indicator of Compromise (IOC)
             </label>
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-cyber-muted" />
               <input
                 type="text"
                 value={iocValue}
-                onChange={(e) => setIocValue(e.target.value)}
-                placeholder={`Enter target ${iocType} (e.g. 198.51.100.44)...`}
-                className="w-full rounded-xl border border-cyber-border bg-cyber-bg py-3 pl-10 pr-4 text-xs font-mono text-emerald-400 placeholder-cyber-muted focus:border-cyber-accent focus:outline-none leading-relaxed"
+                onChange={(e) => {
+                  setIocValue(e.target.value);
+                  setError(null);
+                }}
+                placeholder="e.g. 8.8.8.8, google.com, https://example.com/login, MD5/SHA1/SHA256 hash..."
+                className="w-full rounded-xl border border-cyber-border bg-cyber-bg py-3.5 pl-10 pr-4 text-xs font-mono text-emerald-400 placeholder-cyber-muted focus:border-cyber-accent focus:outline-none leading-relaxed shadow-inner"
                 required
               />
             </div>
           </div>
 
-          {/* Step 3: Start Investigation Trigger */}
+          {/* Start Investigation Trigger */}
           <div className="pt-2 border-t border-cyber-border/60 flex justify-end">
             <button
               type="submit"
               className="flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-cyber-accent to-blue-600 px-6 py-3 text-sm font-bold text-slate-950 shadow-cyber-glow hover:opacity-95 transition-all font-mono"
             >
-              <Zap className="h-4 w-4 fill-current" /> Step 3: Start AI Investigation
+              <Zap className="h-4 w-4 fill-current" /> Start AI Investigation
             </button>
           </div>
         </form>
       )}
 
-      {/* Step 4: Progress Timeline Simulation Modal */}
+      {/* Progress Timeline Simulation Modal */}
       {flowState === 'simulating' && (
         <div className="rounded-2xl border border-cyber-accent/40 bg-cyber-card/90 p-8 backdrop-blur-xl shadow-2xl space-y-6 animate-fade-in">
           <div className="flex items-center justify-between border-b border-cyber-border/60 pb-4">
@@ -225,7 +200,7 @@ High-confidence correlation of malicious IOC payload. Automated AI triage recomm
                   </span>
                 </h3>
                 <p className="text-xs text-cyber-muted">
-                  Target: <span className="font-mono text-cyber-text font-bold">{iocValue}</span> ({iocType})
+                  Target: <span className="font-mono text-cyber-text font-bold">{iocValue}</span>
                 </p>
               </div>
             </div>
