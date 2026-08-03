@@ -3,12 +3,10 @@ import {
   ShieldAlert, 
   Search, 
   Zap, 
-  CheckCircle2, 
-  Loader2, 
-  Sparkles, 
-  Cpu
+  Sparkles 
 } from 'lucide-react';
 import { InvestigationResults } from './InvestigationResults';
+import { InvestigationProgress } from './InvestigationProgress';
 import { investigateIOC } from '../../services/api';
 
 export const InvestigationWizard = ({ onRunTriage }) => {
@@ -16,18 +14,18 @@ export const InvestigationWizard = ({ onRunTriage }) => {
 
   // Execution flow states: 'idle' | 'simulating' | 'results'
   const [flowState, setFlowState] = useState('idle');
-  const [currentSimStep, setCurrentSimStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [progressPercent, setProgressPercent] = useState(20);
+  const [stepStatuses, setStepStatuses] = useState({
+    investigating: 'running',
+    virustotal: 'pending',
+    abuseipdb: 'pending',
+    ai_correlation: 'pending',
+    completed: 'pending'
+  });
+
   const [activeResult, setActiveResult] = useState(null);
   const [error, setError] = useState(null);
-
-  const simSteps = [
-    { title: 'Detecting IOC type', detail: `Auto-detecting syntax and category for target IOC...` },
-    { title: 'Querying VirusTotal', detail: `Requesting reputation, detection engines & malicious flags for ${iocValue}...` },
-    { title: 'Querying AbuseIPDB', detail: 'Checking report frequency, CIDR block owner, and threat confidence rating...' },
-    { title: 'Correlating threat intelligence', detail: 'Cross-referencing IOC against internal attack graph and MITRE ATT&CK heuristics...' },
-    { title: 'AI reasoning in progress', detail: 'Synthesizing evidence payload with AI SOC Reasoning Engine...' },
-    { title: 'Generating incident report', detail: 'Formatting findings, assigning risk level & assembling playbook actions...' }
-  ];
 
   const presets = [
     { value: '198.51.100.44', label: 'Sample C2 IP' },
@@ -42,42 +40,101 @@ export const InvestigationWizard = ({ onRunTriage }) => {
 
     setError(null);
     setFlowState('simulating');
-    setCurrentSimStep(0);
+    setCurrentStep(0);
+    setProgressPercent(20);
+    setStepStatuses({
+      investigating: 'running',
+      virustotal: 'pending',
+      abuseipdb: 'pending',
+      ai_correlation: 'pending',
+      completed: 'pending'
+    });
 
-    let stepIndex = 0;
+    // Start step progression animation while backend API call runs
+    let stepCount = 0;
     const interval = setInterval(() => {
-      stepIndex++;
-      if (stepIndex < simSteps.length) {
-        setCurrentSimStep(stepIndex);
+      stepCount++;
+      if (stepCount === 1) {
+        setCurrentStep(1);
+        setProgressPercent(50);
+        setStepStatuses(prev => ({
+          ...prev,
+          investigating: 'completed',
+          virustotal: 'running'
+        }));
+      } else if (stepCount === 2) {
+        setCurrentStep(2);
+        setProgressPercent(80);
+        setStepStatuses(prev => ({
+          ...prev,
+          virustotal: 'completed',
+          abuseipdb: 'running'
+        }));
+      } else if (stepCount === 3) {
+        setCurrentStep(3);
+        setProgressPercent(95);
+        setStepStatuses(prev => ({
+          ...prev,
+          abuseipdb: 'completed',
+          ai_correlation: 'running'
+        }));
       }
-    }, 500);
+    }, 600);
 
     try {
       const data = await investigateIOC(iocValue.trim());
+      console.log("Investigation API response:", data);
+      console.log("AI Summary:", data.ai_summary);
       clearInterval(interval);
-      setCurrentSimStep(simSteps.length - 1);
+
+
+      // Complete all steps
+      setCurrentStep(4);
+      setProgressPercent(100);
+      setStepStatuses({
+        investigating: 'completed',
+        virustotal: 'completed',
+        abuseipdb: 'completed',
+        ai_correlation: 'completed',
+        completed: 'completed'
+      });
 
       const generatedResult = {
-        id: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: data.id || `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
         ioc: data.ioc || iocValue,
         ioc_type: data.ioc_type || 'Unknown',
         risk_level: data.risk_level || 'Low',
         virustotal: data.virustotal,
         abuseipdb: data.abuseipdb,
+        ai_summary: data.ai_summary || data.summary,
+        summary: data.summary || data.ai_summary || data.gemini_summary || data.ai_investigation_summary,
         date: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
       };
 
-      setActiveResult(generatedResult);
-      setFlowState('results');
-      if (onRunTriage) onRunTriage(generatedResult);
+
+      // Brief completion delay for smooth UX transition
+      setTimeout(() => {
+        setActiveResult(generatedResult);
+        setFlowState('results');
+        if (onRunTriage) onRunTriage(generatedResult);
+      }, 500);
+
     } catch (err) {
       clearInterval(interval);
       console.error('Investigation failed:', err);
       const errorMessage = err.response?.data?.detail 
         || err.message 
-        || 'Failed to communicate with the backend server. Please verify the FastAPI backend is running at http://127.0.0.1:8000.';
+        || 'Failed to communicate with backend server at http://127.0.0.1:8000.';
+      
       setError(errorMessage);
-      setFlowState('idle');
+      setStepStatuses(prev => {
+        const updated = { ...prev };
+        if (updated.ai_correlation === 'running') updated.ai_correlation = 'error';
+        else if (updated.abuseipdb === 'running') updated.abuseipdb = 'error';
+        else if (updated.virustotal === 'running') updated.virustotal = 'error';
+        else updated.investigating = 'error';
+        return updated;
+      });
     }
   };
 
@@ -134,8 +191,8 @@ export const InvestigationWizard = ({ onRunTriage }) => {
         </div>
       </div>
 
-      {/* Error Banner */}
-      {error && (
+      {/* Error Banner when idle */}
+      {error && flowState === 'idle' && (
         <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-5 backdrop-blur-md shadow-2xl flex items-start gap-4 animate-fade-in">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/20 text-red-400">
             <ShieldAlert className="h-5 w-5" />
@@ -184,85 +241,17 @@ export const InvestigationWizard = ({ onRunTriage }) => {
         </form>
       )}
 
-      {/* Progress Timeline Simulation Modal */}
+      {/* Animated Investigation Progress Panel */}
       {flowState === 'simulating' && (
-        <div className="rounded-2xl border border-cyber-accent/40 bg-cyber-card/90 p-8 backdrop-blur-xl shadow-2xl space-y-6 animate-fade-in">
-          <div className="flex items-center justify-between border-b border-cyber-border/60 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyber-accent/20 text-cyber-accent shadow-cyber-glow">
-                <Cpu className="h-6 w-6 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-cyber-text font-mono flex items-center gap-2">
-                  AI Investigation Pipeline Active
-                  <span className="rounded-full bg-cyber-accent/20 px-2 py-0.5 text-[10px] text-cyber-accent font-bold">
-                    STEP {currentSimStep + 1} OF 6
-                  </span>
-                </h3>
-                <p className="text-xs text-cyber-muted">
-                  Target: <span className="font-mono text-cyber-text font-bold">{iocValue}</span>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div>
-            <div className="flex justify-between text-xs font-mono text-cyber-muted mb-2">
-              <span>Pipeline Analysis Progress</span>
-              <span className="text-cyber-accent font-bold">
-                {Math.round(((currentSimStep + 1) / simSteps.length) * 100)}%
-              </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-cyber-surface">
-              <div
-                className="h-full bg-gradient-to-r from-cyber-accent to-purple-500 transition-all duration-500"
-                style={{ width: `${((currentSimStep + 1) / simSteps.length) * 100}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Timeline Steps */}
-          <div className="space-y-3 pt-2">
-            {simSteps.map((step, idx) => {
-              const isDone = idx < currentSimStep;
-              const isCurrent = idx === currentSimStep;
-
-              return (
-                <div
-                  key={idx}
-                  className={`flex items-start gap-3.5 rounded-xl border p-3.5 transition-all ${
-                    isCurrent
-                      ? 'border-cyber-accent bg-cyber-accent/10 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-                      : isDone
-                      ? 'border-emerald-500/30 bg-emerald-500/5'
-                      : 'border-cyber-border/40 bg-cyber-surface/30 opacity-40'
-                  }`}
-                >
-                  <div className="mt-0.5">
-                    {isDone ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                    ) : isCurrent ? (
-                      <Loader2 className="h-5 w-5 text-cyber-accent animate-spin" />
-                    ) : (
-                      <div className="h-5 w-5 rounded-full border border-cyber-border text-center text-xs text-cyber-muted leading-5 font-mono">
-                        {idx + 1}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h4 className={`text-xs font-bold font-mono ${isCurrent ? 'text-cyber-accent' : isDone ? 'text-emerald-400' : 'text-cyber-muted'}`}>
-                      {step.title}
-                    </h4>
-                    <p className="text-xs text-slate-300 mt-0.5">{step.detail}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <InvestigationProgress
+          iocValue={iocValue}
+          currentStep={currentStep}
+          progressPercent={progressPercent}
+          stepStatuses={stepStatuses}
+          errorMessage={error}
+        />
       )}
     </div>
   );
 };
+

@@ -7,8 +7,11 @@ class InvestigationRequest(BaseModel):
 
 
 class InvestigationResponse(BaseModel):
+    id: Optional[str] = None
     ioc: str
     ioc_type: str
     risk_level: str
     virustotal: Optional[Dict[str, Any]] = None
     abuseipdb: Optional[Dict[str, Any]] = None
+    ai_summary: Optional[str] = None
+    date: Optional[str] = None
