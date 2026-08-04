@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
-export const Layout = ({ activeTab, setActiveTab, children, searchQuery, setSearchQuery }) => {
+export const Layout = ({ activeTab, setActiveTab, children }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -17,7 +17,7 @@ export const Layout = ({ activeTab, setActiveTab, children, searchQuery, setSear
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header activeTab={activeTab} onSearch={setSearchQuery} />
+        <Header activeTab={activeTab} />
 
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mx-auto max-w-7xl">

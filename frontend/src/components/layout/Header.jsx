@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Server, Clock, RefreshCw, Zap } from 'lucide-react';
+import { Server, Clock, RefreshCw, Zap } from 'lucide-react';
 
-export const Header = ({ activeTab, onSearch }) => {
+export const Header = ({ activeTab }) => {
   const [backendStatus, setBackendStatus] = useState('checking');
   const [timeUtc, setTimeUtc] = useState('');
 
@@ -58,16 +58,6 @@ export const Header = ({ activeTab, onSearch }) => {
 
       {/* Right Controls */}
       <div className="flex items-center gap-4">
-        {/* Search Bar */}
-        <div className="relative hidden lg:block w-64">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cyber-muted" />
-          <input
-            type="text"
-            placeholder="Search IOCs, Hashes, IPs..."
-            onChange={(e) => onSearch && onSearch(e.target.value)}
-            className="w-full rounded-xl border border-cyber-border bg-cyber-card/80 py-1.5 pl-9 pr-3 text-xs text-cyber-text placeholder-cyber-muted focus:border-cyber-accent focus:outline-none focus:ring-1 focus:ring-cyber-accent transition-all"
-          />
-        </div>
 
         {/* Backend Status Indicator */}
         <div 

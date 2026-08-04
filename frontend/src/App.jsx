@@ -9,7 +9,6 @@ import { MOCK_IOC_INVESTIGATIONS } from './mockData/incidents';
 export function App() {
   const [activeTab, setActiveTab] = useState('new-investigation');
   const [investigations, setInvestigations] = useState(MOCK_IOC_INVESTIGATIONS);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const handleRunTriage = (newResult) => {
     if (newResult && !investigations.some(i => i.id === newResult.id)) {
@@ -21,8 +20,6 @@ export function App() {
     <Layout
       activeTab={activeTab}
       setActiveTab={setActiveTab}
-      searchQuery={searchQuery}
-      setSearchQuery={setSearchQuery}
     >
       {activeTab === 'dashboard' && (
         <DashboardPage
