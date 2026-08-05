@@ -395,19 +395,6 @@ Frontend web application will open at: `http://localhost:5173`.
 
 ---
 
-## Screenshots
-
-> *Placeholder: Add screenshot of AI Incident Overview Dashboard displaying high-level threat metrics, risk distribution charts, and recent investigation feed.*
-
-> *Placeholder: Add screenshot of New IOC Investigation Wizard showing step-by-step automated triage execution.*
-
-> *Placeholder: Add screenshot of Investigation Results Panel showing VirusTotal detections, AbuseIPDB metrics, and Gemini AI Assessment.*
-
-> *Placeholder: Add screenshot of Audit Repository page with searchable IOC records, status badges, and action dropdowns.*
-
-> *Placeholder: Add screenshot of generated ReportLab PDF Incident Report document.*
-
----
 
 ## Testing
 
